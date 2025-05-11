@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VAVI Web</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f0f0f0; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #ccc; padding: 24px; }
+        #conversation { height: 300px; overflow-y: auto; background: #e9ecef; padding: 12px; border-radius: 6px; margin-bottom: 16px; }
+        .user { color: #007bff; }
+        .vavi { color: #28a745; }
+        #input-area { display: flex; gap: 8px; }
+        #user-input { flex: 1; padding: 8px; font-size: 1em; border-radius: 4px; border: 1px solid #ccc; }
+        button { padding: 8px 16px; font-size: 1em; border-radius: 4px; border: none; cursor: pointer; }
+        #speak-btn { background: #007bff; color: #fff; }
+        #send-btn { background: #28a745; color: #fff; }
+        .error { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>VAVI Web Assistant</h2>
+        <div id="conversation"></div>
+        <div id="input-area">
+            <input type="text" id="user-input" placeholder="Type your message...">
+            <button id="send-btn">Send</button>
+            <button id="speak-btn">🎤</button>
+        </div>
+    </div>
+    <script>
+        const conversation = document.getElementById('conversation');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const speakBtn = document.getElementById('speak-btn');
+        let currentAudio = null;
+
+        function appendMessage(sender, text, isError = false) {
+            const div = document.createElement('div');
+            div.className = sender + (isError ? ' error' : '');
+            div.textContent = (sender === 'user' ? 'You: ' : 'VAVI: ') + text;
+            conversation.appendChild(div);
+            conversation.scrollTop = conversation.scrollHeight;
+        }
+
+        async function sendMessage(text) {
+            appendMessage('user', text);
+            userInput.value = '';
+            try {
+                // Call Gemini API
+                const res = await fetch('/api/gemini', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: text })
+                });
+                const data = await res.json();
+                appendMessage('vavi', data.response);
+                // Play TTS
+                await playTTS(data.response);
+            } catch (error) {
+                appendMessage('vavi', 'Error: ' + error.message, true);
+            }
+        }
+
+        sendBtn.onclick = () => {
+            const text = userInput.value.trim();
+            if (text) sendMessage(text);
+        };
+        userInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter') sendBtn.onclick();
+        });
+
+        // Speech-to-text using browser API
+        let recognition;
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.lang = 'en-IN';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.onresult = function(event) {
+                const text = event.results[0][0].transcript;
+                userInput.value = text;
+                sendBtn.onclick();
+            };
+        }
+        speakBtn.onclick = () => {
+            if (recognition) recognition.start();
+            else alert('Speech recognition not supported in this browser.');
+        };
+
+        // Play TTS from backend
+        async function playTTS(text) {
+            try {
+                // Stop any currently playing audio
+                if (currentAudio) {
+                    currentAudio.pause();
+                    currentAudio = null;
+                }
+
+                const response = await fetch('/api/text-to-speech', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to get audio response');
+                }
+
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                currentAudio = new Audio(url);
+                
+                // Clean up the URL when the audio is done playing
+                currentAudio.onended = () => {
+                    URL.revokeObjectURL(url);
+                    currentAudio = null;
+                };
+
+                await currentAudio.play();
+            } catch (error) {
+                console.error('Error playing audio:', error);
+                appendMessage('vavi', 'Error playing audio: ' + error.message, true);
+            }
+        }
+    </script>
+</body>
+</html> 
