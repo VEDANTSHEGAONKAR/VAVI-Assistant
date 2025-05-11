@@ -1,13 +1,10 @@
 from flask import Flask, request, jsonify, send_file
 import google.generativeai as genai
-import pyttsx3
-import speech_recognition as sr
-import tempfile
 import os
 from apikey import api_data
 import webbrowser
-import subprocess
 from pytube import Search
+import requests
 
 app = Flask(__name__)
 
@@ -15,43 +12,9 @@ app = Flask(__name__)
 GENAI_API_KEY = os.getenv('GENAI_API_KEY', api_data)
 genai.configure(api_key=GENAI_API_KEY)
 
-# Text-to-Speech engine (thread-safe)
-engine = None
-
-def init_tts_engine():
-    """Initialize the text-to-speech engine."""
-    global engine
-    if engine is None:
-        engine = pyttsx3.init('sapi5')
-        engine.setProperty('voice', engine.getProperty('voices')[0].id)
-
-# Dictionary of common applications and their paths
-APPS = {
-    'notepad': 'notepad.exe',
-    'calculator': 'calc.exe',
-    'paint': 'mspaint.exe',
-    'word': 'WINWORD.EXE',
-    'excel': 'EXCEL.EXE',
-    'chrome': r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-    'firefox': r'C:\Program Files\Mozilla Firefox\firefox.exe',
-    'edge': r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
-}
-
 def clean_text(text):
     """Remove asterisks and clean the text."""
     return text.replace('*', '')
-
-def open_application(app_name):
-    """Open the specified application."""
-    app_name = app_name.lower()
-    try:
-        if app_name in APPS:
-            subprocess.Popen(APPS[app_name])
-            return f"Opening {app_name}"
-        else:
-            return f"Sorry, I don't know how to open {app_name}"
-    except Exception as e:
-        return f"Error opening {app_name}: {str(e)}"
 
 def play_youtube_video(query):
     """Search and play a YouTube video."""
@@ -64,21 +27,17 @@ def play_youtube_video(query):
         # Get the first video result
         video = s.results[0]
         
-        # Open the video in the default browser
-        webbrowser.open(f"https://www.youtube.com/watch?v={video.video_id}")
-        return f"Playing {video.title}"
+        # Return the video URL and title
+        return {
+            'url': f"https://www.youtube.com/watch?v={video.video_id}",
+            'title': video.title
+        }
     except Exception as e:
         return f"Error playing video: {str(e)}"
 
 def process_command(query):
     """Process the user's command and perform appropriate action."""
     query = query.lower()
-    
-    # Check for application opening commands
-    if "open" in query:
-        for app in APPS.keys():
-            if app in query:
-                return open_application(app)
     
     # Check for YouTube video commands
     if any(phrase in query for phrase in ["play", "youtube", "video"]):
@@ -134,59 +93,6 @@ def gemini_response():
         return jsonify({'response': response})
     except Exception as e:
         return jsonify({'response': f"Sorry, I encountered an error: {e}"}), 500
-
-@app.route('/api/speech-to-text', methods=['POST'])
-def speech_to_text():
-    if 'audio' not in request.files:
-        return jsonify({'error': 'No audio file provided'}), 400
-    audio_file = request.files['audio']
-    recognizer = sr.Recognizer()
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp:
-        audio_file.save(temp.name)
-        with sr.AudioFile(temp.name) as source:
-            audio = recognizer.record(source)
-            try:
-                text = recognizer.recognize_google(audio, language='en-in').lower()
-                return jsonify({'text': text})
-            except sr.UnknownValueError:
-                return jsonify({'text': "Sorry, I didn't catch that. Please repeat."})
-            except sr.RequestError:
-                return jsonify({'text': "Network error. Please check your connection."})
-            except Exception as e:
-                return jsonify({'text': f"Error: {e}"})
-        os.unlink(temp.name)
-
-@app.route('/api/text-to-speech', methods=['POST'])
-def text_to_speech():
-    data = request.json
-    text = data.get('text', '')
-    
-    # Create a temporary file for the audio
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
-    temp_filename = temp_file.name
-    temp_file.close()
-    
-    try:
-        # Initialize TTS engine
-        init_tts_engine()
-        
-        # Save the audio to the temporary file
-        engine.save_to_file(text, temp_filename)
-        engine.runAndWait()
-        
-        # Send the file
-        return send_file(
-            temp_filename,
-            mimetype='audio/wav',
-            as_attachment=False,
-            download_name='response.wav'
-        )
-    finally:
-        # Clean up the temporary file after sending
-        try:
-            os.unlink(temp_filename)
-        except:
-            pass
 
 @app.route('/')
 def index():

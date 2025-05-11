@@ -3,124 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VAVI Web</title>
+    <title>VAVI - AI Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <style>
-        body { font-family: Arial, sans-serif; background: #f0f0f0; margin: 0; padding: 0; }
-        .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #ccc; padding: 24px; }
-        #conversation { height: 300px; overflow-y: auto; background: #e9ecef; padding: 12px; border-radius: 6px; margin-bottom: 16px; }
-        .user { color: #007bff; }
-        .vavi { color: #28a745; }
-        #input-area { display: flex; gap: 8px; }
-        #user-input { flex: 1; padding: 8px; font-size: 1em; border-radius: 4px; border: 1px solid #ccc; }
-        button { padding: 8px 16px; font-size: 1em; border-radius: 4px; border: none; cursor: pointer; }
-        #speak-btn { background: #007bff; color: #fff; }
-        #send-btn { background: #28a745; color: #fff; }
-        .error { color: #dc3545; }
+        .chat-container {
+            height: calc(100vh - 200px);
+        }
+        .message {
+            max-width: 80%;
+            margin: 10px;
+            padding: 10px 15px;
+            border-radius: 15px;
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: auto;
+        }
+        .vavi-message {
+            background-color: #f5f5f5;
+            margin-right: auto;
+        }
+        .youtube-link {
+            color: #ff0000;
+            text-decoration: underline;
+        }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h2>VAVI Web Assistant</h2>
-        <div id="conversation"></div>
-        <div id="input-area">
-            <input type="text" id="user-input" placeholder="Type your message...">
-            <button id="send-btn">Send</button>
-            <button id="speak-btn">🎤</button>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-blue-600">VAVI</h1>
+            <p class="text-gray-600 mt-2">Your AI Assistant</p>
+        </header>
+
+        <div class="bg-white rounded-lg shadow-lg p-4">
+            <div id="chat-container" class="chat-container overflow-y-auto mb-4">
+                <div class="message vavi-message">
+                    Hi, I'm VAVI! How can I help you today?
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <input type="text" id="user-input" 
+                    class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    placeholder="Type your message here...">
+                <button onclick="sendMessage()" 
+                    class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    Send
+                </button>
+            </div>
         </div>
     </div>
+
     <script>
-        const conversation = document.getElementById('conversation');
+        const chatContainer = document.getElementById('chat-container');
         const userInput = document.getElementById('user-input');
-        const sendBtn = document.getElementById('send-btn');
-        const speakBtn = document.getElementById('speak-btn');
-        let currentAudio = null;
 
-        function appendMessage(sender, text, isError = false) {
-            const div = document.createElement('div');
-            div.className = sender + (isError ? ' error' : '');
-            div.textContent = (sender === 'user' ? 'You: ' : 'VAVI: ') + text;
-            conversation.appendChild(div);
-            conversation.scrollTop = conversation.scrollHeight;
-        }
-
-        async function sendMessage(text) {
-            appendMessage('user', text);
-            userInput.value = '';
-            try {
-                // Call Gemini API
-                const res = await fetch('/api/gemini', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query: text })
-                });
-                const data = await res.json();
-                appendMessage('vavi', data.response);
-                // Play TTS
-                await playTTS(data.response);
-            } catch (error) {
-                appendMessage('vavi', 'Error: ' + error.message, true);
+        userInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
             }
-        }
-
-        sendBtn.onclick = () => {
-            const text = userInput.value.trim();
-            if (text) sendMessage(text);
-        };
-        userInput.addEventListener('keydown', e => {
-            if (e.key === 'Enter') sendBtn.onclick();
         });
 
-        // Speech-to-text using browser API
-        let recognition;
-        if ('webkitSpeechRecognition' in window) {
-            recognition = new webkitSpeechRecognition();
-            recognition.lang = 'en-IN';
-            recognition.continuous = false;
-            recognition.interimResults = false;
-            recognition.onresult = function(event) {
-                const text = event.results[0][0].transcript;
-                userInput.value = text;
-                sendBtn.onclick();
-            };
+        function addMessage(text, isUser) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'vavi-message'}`;
+            
+            // Check if the response is a YouTube video object
+            if (typeof text === 'object' && text.url && text.title) {
+                messageDiv.innerHTML = `Found video: <a href="${text.url}" target="_blank" class="youtube-link">${text.title}</a>`;
+            } else {
+                messageDiv.textContent = text;
+            }
+            
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
         }
-        speakBtn.onclick = () => {
-            if (recognition) recognition.start();
-            else alert('Speech recognition not supported in this browser.');
-        };
 
-        // Play TTS from backend
-        async function playTTS(text) {
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            // Add user message to chat
+            addMessage(message, true);
+            userInput.value = '';
+
             try {
-                // Stop any currently playing audio
-                if (currentAudio) {
-                    currentAudio.pause();
-                    currentAudio = null;
-                }
-
-                const response = await fetch('/api/text-to-speech', {
+                const response = await fetch('/api/gemini', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text })
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query: message }),
                 });
 
-                if (!response.ok) {
-                    throw new Error('Failed to get audio response');
-                }
-
-                const blob = await response.blob();
-                const url = URL.createObjectURL(blob);
-                currentAudio = new Audio(url);
-                
-                // Clean up the URL when the audio is done playing
-                currentAudio.onended = () => {
-                    URL.revokeObjectURL(url);
-                    currentAudio = null;
-                };
-
-                await currentAudio.play();
+                const data = await response.json();
+                addMessage(data.response, false);
             } catch (error) {
-                console.error('Error playing audio:', error);
-                appendMessage('vavi', 'Error playing audio: ' + error.message, true);
+                addMessage('Sorry, I encountered an error. Please try again.', false);
+                console.error('Error:', error);
             }
         }
     </script>

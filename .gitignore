@@ -39,3 +39,4 @@ Thumbs.db
 # Project specific
 apikey.py
 *.wav 
+.vercel
